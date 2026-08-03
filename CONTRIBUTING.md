@@ -10,4 +10,4 @@ Keep changes scientifically cautious and reproducible.
 6. Run `cargo fmt --all -- --check`, `cargo clippy --all-targets --all-features -- -D warnings`, `cargo test --all-targets`, and `cargo build --release`.
 7. Update data-format, methodology, MCP, and operator documentation when contracts change.
 
-Do not add a software license without the repository owner’s decision.
+Contributions are distributed under the GNU General Public License v3.0 only; see `LICENSE`.

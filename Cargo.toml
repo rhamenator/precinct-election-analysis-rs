@@ -5,6 +5,7 @@ edition = "2024"
 rust-version = "1.89"
 description = "Validated precinct election statistics, deterministic anomaly diagnostics, web UI, and MCP server"
 repository = "https://github.com/rhamenator/precinct-election-analysis-rs"
+license = "GPL-3.0-only"
 
 [dependencies]
 anyhow = "1"

@@ -4,7 +4,7 @@ A standalone Rust implementation for validating precinct-level election CSV data
 
 > An anomaly is unusual under a stated exploratory model. It is not proof of fraud, manipulation, misconduct, or an incorrect outcome. A risk-limiting audit examines ballot evidence; aggregate precinct diagnostics do not confirm an election outcome.
 
-No software license has been selected. All rights remain with the repository owner unless and until a license is added.
+Copyright © 2026 Rich Hamilton. Licensed under the [GNU General Public License v3.0 only](LICENSE).
 
 ## Quick start
 
