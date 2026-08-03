@@ -124,5 +124,9 @@ mod tests {
             .read_to_string(&mut report)
             .unwrap();
         assert!(report.contains("not proof"));
+
+        let mut empty = ingestion.clone();
+        empty.records.clear();
+        assert!(validated_csv(&empty).is_empty());
     }
 }

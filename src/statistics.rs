@@ -588,7 +588,19 @@ pub fn empty_metrics(source: &[PrecinctRecord], candidate: &str) -> Vec<Analysis
 
 #[cfg(test)]
 mod tests {
+    use crate::{ingestion::ingest_bytes, sample::sample_csv};
+
     use super::*;
+
+    fn records(rows: usize) -> (Config, Vec<PrecinctRecord>, Vec<AnalysisRecord>) {
+        let mut config = Config::default();
+        config.statistics.minimum_observations = 3;
+        config.statistics.spatial_permutations = 9;
+        let csv = sample_csv(rows, 42);
+        let ingestion = ingest_bytes(csv.as_bytes(), "sample.csv", &config).unwrap();
+        let output = empty_metrics(&ingestion.records, "candidate_a");
+        (config, ingestion.records, output)
+    }
 
     #[test]
     fn bh_is_monotone_in_rank() {
@@ -605,5 +617,124 @@ mod tests {
         assert!((adjusted[0] - 0.03).abs() < 1e-12);
         assert!((adjusted[2] - 0.06).abs() < 1e-12);
         assert!((adjusted[1] - 0.06).abs() < 1e-12);
+    }
+
+    #[test]
+    fn turnout_share_reports_each_degenerate_precondition() {
+        let (config, mut source, mut output) = records(8);
+        assert!(turnout_share(&source[..2], &mut output[..2], "candidate_a", &config).is_err());
+
+        for record in &mut source {
+            record.calculated_turnout_percent = Some(50.0);
+        }
+        assert!(turnout_share(&source, &mut output, "candidate_a", &config).is_err());
+
+        let (mut config, mut source, mut output) = records(8);
+        config.statistics.minimum_observations = 5;
+        config.statistics.baseline_turnout_quantile = 0.5;
+        assert!(turnout_share(&source, &mut output, "candidate_a", &config).is_err());
+
+        config.statistics.minimum_observations = 3;
+        config.statistics.baseline_turnout_quantile = 1.0;
+        for record in &mut source {
+            record
+                .candidate_shares
+                .insert("candidate_a".into(), Some(0.5));
+        }
+        assert!(turnout_share(&source, &mut output, "candidate_a", &config).is_err());
+
+        let (mut config, source, mut output) = records(2);
+        config.statistics.minimum_observations = 2;
+        config.statistics.baseline_turnout_quantile = 1.0;
+        assert!(turnout_share(&source, &mut output, "candidate_a", &config).is_err());
+    }
+
+    #[test]
+    fn vote_count_trend_covers_small_constant_and_constant_share_data() {
+        let (_config, source, mut output) = records(5);
+        assert!(vote_share_by_count(&source[..2], &mut output[..2], "candidate_a").is_err());
+
+        let mut constant_votes = source.clone();
+        for record in &mut constant_votes {
+            record.candidate_votes.insert("candidate_a".into(), 10);
+        }
+        assert!(vote_share_by_count(&constant_votes, &mut output, "candidate_a").is_err());
+
+        let mut constant_share = source;
+        for record in &mut constant_share {
+            record
+                .candidate_shares
+                .insert("candidate_a".into(), Some(0.5));
+        }
+        let diagnostic = vote_share_by_count(&constant_share, &mut output, "candidate_a").unwrap();
+        assert_eq!(diagnostic["r_squared"], 0.0);
+    }
+
+    #[test]
+    fn down_ballot_skips_missing_malformed_and_zero_comparisons() {
+        let (config, mut source, mut output) = records(6);
+        assert!(down_ballot_difference(&source, &mut output, "missing", &config).is_err());
+        source[0].source.remove("Votes_Down_Ballot_A");
+        source[1]
+            .source
+            .insert("Votes_Down_Ballot_A".into(), "bad".into());
+        source[2].candidate_votes.insert("candidate_a".into(), 0);
+        let diagnostic =
+            down_ballot_difference(&source, &mut output, "candidate_a", &config).unwrap();
+        assert!(
+            diagnostic["comparisons"].as_array().unwrap()[0]["valid_observations"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+
+        for record in &mut source {
+            record.source.remove("Votes_Down_Ballot_A");
+        }
+        assert!(down_ballot_difference(&source, &mut output, "candidate_a", &config).is_err());
+    }
+
+    #[test]
+    fn digit_spatial_and_robust_methods_report_unavailable_boundaries() {
+        let (mut config, mut source, mut output) = records(5);
+        config.statistics.minimum_observations = 10;
+        assert!(digit_diagnostics(&source, &config).is_err());
+        assert!(spatial(&source[..2], &mut output[..2], "candidate_a", &config).is_err());
+
+        config.statistics.minimum_observations = 3;
+        for record in &mut source {
+            record
+                .candidate_shares
+                .insert("candidate_a".into(), Some(0.5));
+        }
+        assert!(spatial(&source, &mut output, "candidate_a", &config).is_err());
+
+        config.anomaly.enabled = false;
+        assert!(robust_multivariate(&source, &mut output, "candidate_a", &config).is_err());
+        config.anomaly.enabled = true;
+        config.statistics.minimum_observations = 10;
+        assert!(robust_multivariate(&source, &mut output, "candidate_a", &config).is_err());
+    }
+
+    #[test]
+    fn robust_scoring_handles_zero_ballots_and_all_constant_features() {
+        let (mut config, mut source, mut output) = records(5);
+        for record in &mut source {
+            record.ballots_cast = Some(0);
+            record.valid_contest_votes = 0;
+            record.calculated_turnout_percent = Some(0.0);
+            record.reported_turnout_percent = Some(0.0);
+            record
+                .candidate_shares
+                .insert("candidate_a".into(), Some(0.5));
+        }
+        config.statistics.minimum_observations = 3;
+        let diagnostic = robust_multivariate(&source, &mut output, "candidate_a", &config).unwrap();
+        assert_eq!(diagnostic["flagged_observations"], 0);
+        assert!(
+            output
+                .iter()
+                .all(|record| !record.metrics.contains_key("robust_anomaly_score"))
+        );
     }
 }

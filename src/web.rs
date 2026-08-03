@@ -121,10 +121,119 @@ const INDEX_HTML: &str = r#"<!doctype html>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::{
+        body::{Body, to_bytes},
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+
+    async fn response_json(response: axum::response::Response) -> Value {
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        serde_json::from_slice(&bytes).unwrap()
+    }
 
     #[tokio::test]
     async fn index_contains_interpretation_boundary() {
         assert!(index().await.0.contains("not proof of fraud"));
         assert!(INDEX_HTML.contains("/api/analyze"));
+    }
+
+    #[tokio::test]
+    async fn public_get_routes_return_health_and_deterministic_sample() {
+        let app = router(Config::default());
+        let response = app
+            .clone()
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let health = response_json(response).await;
+        assert_eq!(health["status"], "healthy");
+        assert!(health["caution"].as_str().unwrap().contains("not proof"));
+
+        let response = app
+            .oneshot(Request::get("/sample.csv").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "text/csv; charset=utf-8"
+        );
+        let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+        assert_eq!(
+            String::from_utf8(bytes.to_vec()).unwrap().lines().count(),
+            121
+        );
+    }
+
+    #[tokio::test]
+    async fn validation_endpoint_distinguishes_valid_and_invalid_csv() {
+        let app = router(Config::default());
+        for (csv_text, expected) in [
+            (crate::sample::sample_csv(3, 42), StatusCode::OK),
+            ("bad\nvalue\n".into(), StatusCode::UNPROCESSABLE_ENTITY),
+        ] {
+            let request = Request::post("/api/validate")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&json!({"csv_text": csv_text})).unwrap(),
+                ))
+                .unwrap();
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected);
+            let body = response_json(response).await;
+            assert_eq!(
+                body["status"],
+                if expected == StatusCode::OK {
+                    "valid"
+                } else {
+                    "invalid"
+                }
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn analysis_endpoint_honors_method_selection_and_reports_errors() {
+        let app = router(Config::default());
+        let request = Request::post("/api/analyze")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&json!({
+                    "csv_text": crate::sample::sample_csv(5, 42),
+                    "candidate_key": "candidate_a",
+                    "methods": ["vote_share_by_count"]
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_json(response).await;
+        assert_eq!(
+            body["run"]["requested_methods"],
+            json!(["vote_share_by_count"])
+        );
+
+        let request = Request::post("/api/analyze")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                serde_json::to_vec(&json!({
+                    "csv_text": crate::sample::sample_csv(3, 42),
+                    "candidate_key": "missing"
+                }))
+                .unwrap(),
+            ))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = response_json(response).await;
+        assert!(
+            body["message"]
+                .as_str()
+                .unwrap()
+                .contains("unknown candidate")
+        );
     }
 }

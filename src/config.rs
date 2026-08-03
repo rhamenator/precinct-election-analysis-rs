@@ -250,6 +250,8 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn partial_yaml_keeps_nested_defaults() {
@@ -268,5 +270,107 @@ mod tests {
         let mut config = Config::default();
         config.anomaly.flag_threshold = f64::NAN;
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn load_supports_defaults_files_and_io_errors() {
+        assert_eq!(Config::load(None).unwrap().server.bind, "127.0.0.1:8080");
+        let mut file = NamedTempFile::new().unwrap();
+        write!(file, "server:\n  bind: 127.0.0.1:9090\n").unwrap();
+        assert_eq!(
+            Config::load(Some(file.path())).unwrap().server.bind,
+            "127.0.0.1:9090"
+        );
+        assert!(Config::load(Some(Path::new("does-not-exist.yaml"))).is_err());
+    }
+
+    #[test]
+    fn validation_rejects_each_invalid_configuration_family() {
+        let mut cases = Vec::new();
+        let mut config = Config::default();
+        config.data.max_file_size_mb = 0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.data.turnout_tolerance_percentage_points = -1.0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.data.schema.candidates.clear();
+        cases.push(config);
+        let mut config = Config::default();
+        config.data.schema.candidates[0].key.clear();
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.minimum_observations = 2;
+        cases.push(config);
+        let mut config = Config::default();
+        config.anomaly.flag_threshold = 1.1;
+        cases.push(config);
+        let mut config = Config::default();
+        config.server.bind = "localhost:not-a-port".into();
+        cases.push(config);
+        for config in cases {
+            assert!(config.validate().is_err());
+        }
+    }
+
+    #[test]
+    fn validation_exercises_every_short_circuit_condition() {
+        let mut cases = Vec::new();
+        for value in [f64::NAN, -0.1] {
+            let mut config = Config::default();
+            config.data.turnout_tolerance_percentage_points = value;
+            cases.push(config);
+        }
+        for field in 0..3 {
+            let mut config = Config::default();
+            match field {
+                0 => config.data.schema.candidates[0].column.clear(),
+                1 => config.data.schema.candidates[0].label.clear(),
+                _ => config.data.schema.candidates[0].key.clear(),
+            }
+            cases.push(config);
+        }
+        for field in 0..3 {
+            let mut config = Config::default();
+            match field {
+                0 => {
+                    config.data.schema.candidates[1].column =
+                        config.data.schema.candidates[0].column.clone()
+                }
+                1 => {
+                    config.data.schema.candidates[1].label =
+                        config.data.schema.candidates[0].label.clone()
+                }
+                _ => {
+                    config.data.schema.candidates[1].key =
+                        config.data.schema.candidates[0].key.clone()
+                }
+            }
+            cases.push(config);
+        }
+        let mut config = Config::default();
+        config.statistics.baseline_turnout_quantile = 0.4;
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.studentized_residual_threshold = f64::NAN;
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.studentized_residual_threshold = 0.0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.alpha = 1.0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.spatial_neighbors = 0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.statistics.spatial_permutations = 0;
+        cases.push(config);
+        let mut config = Config::default();
+        config.anomaly.flag_threshold = f64::NAN;
+        cases.push(config);
+        for config in cases {
+            assert!(config.validate().is_err());
+        }
     }
 }

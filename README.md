@@ -113,4 +113,15 @@ cargo test --all-targets
 cargo build --release
 ```
 
-CI runs the same gates. See [docs/architecture.md](docs/architecture.md) and [docs/user-guide.md](docs/user-guide.md) for further detail.
+Branch-aware coverage requires `cargo-llvm-cov` and the nightly LLVM tools component:
+
+```powershell
+cargo install cargo-llvm-cov --locked
+rustup toolchain install nightly --component llvm-tools-preview
+cargo +nightly llvm-cov --all-targets --branch --fail-under-lines 95 --fail-under-regions 95 --fail-under-functions 94
+```
+
+CI enforces at least 95% line and region coverage and 94% function coverage, and prints the measured
+branch coverage. Branch instrumentation remains a nightly Rust feature; normal formatting, linting,
+tests, and release builds continue to run on stable Rust. See [docs/architecture.md](docs/architecture.md) and
+[docs/user-guide.md](docs/user-guide.md) for further detail.

@@ -52,7 +52,10 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_writer(std::io::stderr)
         .init();
-    let cli = Cli::parse();
+    run(Cli::parse()).await
+}
+
+async fn run(cli: Cli) -> anyhow::Result<()> {
     if matches!(cli.command, Command::Mcp) {
         return precinct_election_analysis_rs::mcp::run_stdio(cli.config).await;
     }
@@ -98,4 +101,97 @@ async fn main() -> anyhow::Result<()> {
         Command::Mcp => unreachable!(),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[test]
+    fn command_line_parses_defaults_and_rejects_missing_commands() {
+        let cli = Cli::try_parse_from(["app", "sample"]).unwrap();
+        match cli.command {
+            Command::Sample { rows, output } => {
+                assert_eq!(rows, 120);
+                assert_eq!(output, PathBuf::from("fictional-election-sample.csv"));
+            }
+            _ => panic!("expected sample command"),
+        }
+        assert!(Cli::try_parse_from(["app"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn sample_validate_and_analyze_commands_complete_real_file_workflows() {
+        let directory = tempdir().unwrap();
+        let sample = directory.path().join("sample.csv");
+        run(Cli {
+            config: None,
+            command: Command::Sample {
+                rows: 25,
+                output: sample.clone(),
+            },
+        })
+        .await
+        .unwrap();
+        assert_eq!(fs::read_to_string(&sample).unwrap().lines().count(), 26);
+
+        run(Cli {
+            config: None,
+            command: Command::Validate {
+                input: sample.clone(),
+            },
+        })
+        .await
+        .unwrap();
+
+        for (methods, filename) in [
+            (Vec::new(), "all.zip"),
+            (vec!["vote_share_by_count".into()], "selected.zip"),
+        ] {
+            let output = directory.path().join(filename);
+            run(Cli {
+                config: None,
+                command: Command::Analyze {
+                    input: sample.clone(),
+                    candidate: "candidate_a".into(),
+                    methods,
+                    output: output.clone(),
+                },
+            })
+            .await
+            .unwrap();
+            assert!(fs::metadata(output).unwrap().len() > 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn commands_propagate_validation_and_io_failures() {
+        let directory = tempdir().unwrap();
+        for rows in [0, 100_001] {
+            let result = run(Cli {
+                config: None,
+                command: Command::Sample {
+                    rows,
+                    output: directory.path().join("invalid.csv"),
+                },
+            })
+            .await;
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains("between 1 and 100000")
+            );
+        }
+
+        let result = run(Cli {
+            config: None,
+            command: Command::Validate {
+                input: directory.path().join("missing.csv"),
+            },
+        })
+        .await;
+        assert!(result.is_err());
+    }
 }

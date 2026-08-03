@@ -590,4 +590,109 @@ mod tests {
         assert!(result.records.is_empty());
         assert!(result.excluded[0].reasons.contains(&"invalid_count".into()));
     }
+
+    #[test]
+    fn rejects_empty_oversized_header_only_and_unmapped_inputs() {
+        let config = Config::default();
+        assert!(ingest_bytes(b"", "empty.csv", &config).is_err());
+        assert!(ingest_bytes(b"\n", "no-columns.csv", &config).is_err());
+        assert!(
+            ingest_bytes(
+                b"Jurisdiction,Precinct,Valid_Contest_Votes,Votes_Candidate_A,Votes_Candidate_B\n",
+                "headers.csv",
+                &config
+            )
+            .is_err()
+        );
+        assert!(ingest_bytes(b"wrong,columns\n1,2\n", "wrong.csv", &config).is_err());
+
+        let mut tiny = Config::default();
+        tiny.data.max_file_size_mb = 0;
+        assert!(ingest_bytes(b"x", "large.csv", &tiny).is_err());
+    }
+
+    #[test]
+    fn reports_missing_identifiers_vote_types_and_distinct_count_errors() {
+        let mut config = Config::default();
+        config.data.schema.vote_type = Some("Vote_Type".into());
+        let csv = b"Jurisdiction,Precinct,Vote_Type,Valid_Contest_Votes,Votes_Candidate_A,Votes_Candidate_B\n,1,Mail,10,-1,11\nA,,Election Day,10,1.5,nope\n";
+        let result = ingest_bytes(csv, "invalid.csv", &config).unwrap();
+        assert!(result.records.is_empty());
+        assert!(
+            result
+                .excluded
+                .iter()
+                .all(|row| row.reasons.contains(&"missing_identifier".into()))
+        );
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("negative"))
+        );
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("not an integer"))
+        );
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .any(|issue| issue.message.contains("nonnegative integer"))
+        );
+    }
+
+    #[test]
+    fn legacy_invalid_and_overflow_registration_are_excluded() {
+        let csv = b"County,Precinct,Registered_Dem,Registered_Rep,Votes_Harris,Votes_Trump,Total_Votes,Turnout_Percent\nA,1,bad,10,4,6,10,50\nA,2,18446744073709551615,1,4,6,10,50\n";
+        let result = ingest_bytes(csv, "legacy.csv", &Config::default()).unwrap();
+        assert!(result.records.is_empty());
+        assert!(
+            result
+                .excluded
+                .iter()
+                .all(|row| row.reasons.contains(&"invalid_count".into()))
+        );
+    }
+
+    #[test]
+    fn turnout_coordinate_and_zero_denominator_states_are_explicit() {
+        let csv = b"Jurisdiction,Precinct,Registered_Voters,Ballots_Cast,Valid_Contest_Votes,Votes_Candidate_A,Votes_Candidate_B,Latitude,Longitude,Reported_Turnout_Percent\nA,1,100,80,78,40,38,,200,10\nA,2,0,0,0,0,0,42,-85,\nA,3,100,70,69,30,39,42.1,-85.1,70\nA,4,100,70,69,30,39,42.1,-85.1,invalid\n";
+        let result = ingest_bytes(csv, "quality.csv", &Config::default()).unwrap();
+        assert_eq!(result.records.len(), 3);
+        assert_eq!(result.excluded.len(), 1);
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .filter(|issue| issue.severity == Severity::Warning)
+                .count()
+                >= 3
+        );
+        assert_eq!(result.records[1].candidate_shares["candidate_a"], None);
+        assert_eq!(result.records[1].calculated_turnout_percent, None);
+        assert!(
+            result
+                .report
+                .issues
+                .iter()
+                .any(|issue| issue.code == "turnout_mismatch")
+        );
+    }
+
+    #[test]
+    fn schema_allowances_permit_documented_total_relationships() {
+        let mut config = Config::default();
+        config.data.schema.contest_votes_may_exceed_ballots = true;
+        config.data.schema.ballots_may_exceed_registration = true;
+        let csv = b"Jurisdiction,Precinct,Registered_Voters,Ballots_Cast,Valid_Contest_Votes,Votes_Candidate_A,Votes_Candidate_B\nA,1,5,10,11,5,6\n";
+        let result = ingest_bytes(csv, "allowed.csv", &config).unwrap();
+        assert_eq!(result.records.len(), 1);
+    }
 }

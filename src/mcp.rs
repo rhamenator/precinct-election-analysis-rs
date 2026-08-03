@@ -229,14 +229,163 @@ pub async fn run_stdio(config_path: Option<PathBuf>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    fn server() -> ElectionMcp {
+        let mut config = Config::default();
+        config.statistics.minimum_observations = 3;
+        config.statistics.spatial_permutations = 9;
+        ElectionMcp::new(config)
+    }
+
     #[test]
     fn tool_contracts_are_bounded() {
-        let server = ElectionMcp::new(Config::default());
+        let server = server();
         let tools = server.tool_router.list_all();
         let names: std::collections::HashSet<_> =
             tools.iter().map(|tool| tool.name.as_ref()).collect();
         assert_eq!(names.len(), 5);
         assert!(names.contains("health"));
         assert!(names.contains("analyze_csv"));
+    }
+
+    #[test]
+    fn health_and_server_information_state_interpretation_limits() {
+        let server = server();
+        let health = server.health().0;
+        assert_eq!(health["status"], "healthy");
+        assert_eq!(health["available_methods"].as_array().unwrap().len(), 6);
+        assert!(health["caution"].as_str().unwrap().contains("not proof"));
+
+        let info = server.get_info();
+        assert!(info.instructions.unwrap().contains("not proof"));
+        assert_eq!(info.server_info.name, "precinct-election-analysis-rs");
+    }
+
+    #[test]
+    fn sample_is_bounded_and_deterministic() {
+        let server = server();
+        for rows in [0, 1001] {
+            let error = server
+                .sample_csv(Parameters(SampleRequest { rows }))
+                .err()
+                .unwrap();
+            assert!(error.contains("between 1 and 1000"));
+        }
+        let first = server
+            .sample_csv(Parameters(SampleRequest { rows: 3 }))
+            .unwrap()
+            .0;
+        let second = server
+            .sample_csv(Parameters(SampleRequest { rows: 3 }))
+            .unwrap()
+            .0;
+        assert_eq!(first["csv"], second["csv"]);
+        assert_eq!(first["fictional"], true);
+        assert_eq!(first["csv"].as_str().unwrap().lines().count(), 4);
+    }
+
+    #[test]
+    fn validation_reports_valid_excluded_and_invalid_inputs() {
+        let server = server();
+        let error = server
+            .validate_csv(Parameters(ValidateRequest {
+                csv_text: String::new(),
+                preview_rows: 101,
+            }))
+            .err()
+            .unwrap();
+        assert!(error.contains("between 0 and 100"));
+
+        let valid = sample_csv(4, 42);
+        let response = server
+            .validate_csv(Parameters(ValidateRequest {
+                csv_text: valid,
+                preview_rows: 2,
+            }))
+            .unwrap()
+            .0;
+        assert_eq!(response["status"], "valid");
+        assert_eq!(response["accepted_preview"].as_array().unwrap().len(), 2);
+
+        let invalid = server
+            .validate_csv(Parameters(ValidateRequest {
+                csv_text: "not,a,supported,schema\n1,2,3,4\n".into(),
+                preview_rows: 1,
+            }))
+            .unwrap()
+            .0;
+        assert_eq!(invalid["status"], "invalid");
+        assert!(!invalid["message"].as_str().unwrap().is_empty());
+    }
+
+    #[test]
+    fn analysis_is_bounded_and_reports_errors_and_metadata() {
+        let server = server();
+        let error = server
+            .analyze_csv(Parameters(AnalyzeRequest {
+                csv_text: String::new(),
+                candidate_key: "candidate_a".into(),
+                methods: None,
+                max_records: 501,
+            }))
+            .err()
+            .unwrap();
+        assert!(error.contains("between 0 and 500"));
+
+        let invalid = server
+            .analyze_csv(Parameters(AnalyzeRequest {
+                csv_text: "bad\nvalue\n".into(),
+                candidate_key: "candidate_a".into(),
+                methods: None,
+                max_records: 1,
+            }))
+            .unwrap()
+            .0;
+        assert_eq!(invalid["status"], "invalid");
+
+        let response = server
+            .analyze_csv(Parameters(AnalyzeRequest {
+                csv_text: sample_csv(8, 42),
+                candidate_key: "candidate_a".into(),
+                methods: Some(vec!["vote_share_by_count".into()]),
+                max_records: 2,
+            }))
+            .unwrap()
+            .0;
+        assert_eq!(response["status"], "complete_with_method_statuses");
+        assert_eq!(response["records_returned"], 2);
+        assert_eq!(response["records_total"], 8);
+        assert_eq!(response["metadata"]["candidate_key"], "candidate_a");
+
+        let error = server
+            .analyze_csv(Parameters(AnalyzeRequest {
+                csv_text: sample_csv(3, 42),
+                candidate_key: "unknown".into(),
+                methods: Some(vec![]),
+                max_records: 0,
+            }))
+            .err()
+            .unwrap();
+        assert!(error.contains("unknown candidate key"));
+    }
+
+    #[test]
+    fn narrative_context_contains_only_bounded_analysis_and_constraints() {
+        let response = server()
+            .narrative_context(Parameters(AnalyzeRequest {
+                csv_text: sample_csv(3, 42),
+                candidate_key: "candidate_a".into(),
+                methods: Some(vec!["vote_share_by_count".into()]),
+                max_records: 500,
+            }))
+            .unwrap()
+            .0;
+        assert_eq!(response["analysis"]["records_returned"], 0);
+        assert!(response["prohibited_claims"].as_array().unwrap().len() >= 4);
+        assert!(
+            response["required_interpretation"]
+                .as_str()
+                .unwrap()
+                .contains("not proof")
+        );
     }
 }

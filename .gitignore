@@ -2,3 +2,5 @@
 *.code-workspace
 *.zip
 fictional-election-sample.csv
+coverage*.json
+lcov*.info

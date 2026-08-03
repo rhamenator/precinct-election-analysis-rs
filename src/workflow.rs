@@ -200,4 +200,37 @@ mod tests {
         };
         assert_eq!(scores(&first_run), scores(&second_run));
     }
+
+    #[test]
+    fn rejects_unknown_candidate_and_method_and_marks_disabled_analysis_skipped() {
+        let mut config = Config::default();
+        config.statistics.minimum_observations = 3;
+        let csv = sample_csv(5, 42);
+        let ingestion = ingest_bytes(csv.as_bytes(), "sample.csv", &config).unwrap();
+        assert!(
+            analyze(&ingestion, "missing", &[], &config)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown candidate")
+        );
+        assert!(
+            analyze(&ingestion, "candidate_a", &["bogus".into()], &config)
+                .unwrap_err()
+                .to_string()
+                .contains("unknown methods")
+        );
+
+        config.anomaly.enabled = false;
+        let run = analyze(
+            &ingestion,
+            "candidate_a",
+            &["robust_multivariate".into()],
+            &config,
+        )
+        .unwrap();
+        assert_eq!(
+            run.statuses["robust_multivariate"].state,
+            MethodState::Skipped
+        );
+    }
 }
