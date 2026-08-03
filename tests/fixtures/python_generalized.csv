@@ -1,0 +1,6 @@
+Jurisdiction,Precinct,Registered_Voters,Ballots_Cast,Valid_Contest_Votes,Votes_Candidate_A,Votes_Candidate_B,Votes_Down_Ballot_A,Votes_Down_Ballot_B,Write_In_Votes,Undervotes,Overvotes,Latitude,Longitude,Reported_Turnout_Percent,Source_Note
+Michigan County 1,Precinct 0001,1000,700,690,330,360,322,353,0,9,1,42.1000,-85.1000,70.0,Python-compatible fixture
+Michigan County 1,Precinct 0002,1200,780,770,390,380,380,372,0,9,1,42.1100,-85.0900,65.0,Python-compatible fixture
+Michigan County 2,Precinct 0003,900,630,620,340,280,332,274,0,9,1,42.2000,-85.0000,70.0,Python-compatible fixture
+Michigan County 2,Precinct 0004,1500,1050,1035,550,485,537,475,0,13,2,42.2100,-84.9900,70.0,Python-compatible fixture
+Michigan County 3,Precinct 0005,800,520,510,240,270,234,265,0,9,1,42.3000,-84.9000,65.0,Python-compatible fixture

@@ -1,0 +1,36 @@
+[package]
+name = "precinct-election-analysis-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.89"
+description = "Validated precinct election statistics, deterministic anomaly diagnostics, web UI, and MCP server"
+repository = "https://github.com/rhamenator/precinct-election-analysis-rs"
+
+[dependencies]
+anyhow = "1"
+axum = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+csv = "1"
+hex = "0.4"
+rand = "0.9"
+rand_chacha = "0.9"
+rmcp = { version = "3.1", features = ["transport-io"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+sha2 = "0.10"
+statrs = "0.19"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+zip = { version = "7", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"

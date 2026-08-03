@@ -1,0 +1,47 @@
+data:
+  max_file_size_mb: 200
+  turnout_tolerance_percentage_points: 1.0
+  schema:
+    jurisdiction: Jurisdiction
+    precinct: Precinct
+    vote_type: null
+    registered_voters: Registered_Voters
+    active_registered_voters: null
+    ballots_cast: Ballots_Cast
+    valid_contest_votes: Valid_Contest_Votes
+    write_in_votes: Write_In_Votes
+    undervotes: Undervotes
+    overvotes: Overvotes
+    latitude: Latitude
+    longitude: Longitude
+    reported_turnout: Reported_Turnout_Percent
+    contest_votes_may_exceed_ballots: false
+    ballots_may_exceed_registration: false
+    candidates:
+      - { column: Votes_Candidate_A, label: Candidate A, key: candidate_a }
+      - { column: Votes_Candidate_B, label: Candidate B, key: candidate_b }
+    down_ballot_pairs:
+      - presidential_candidate_key: candidate_a
+        down_ballot_column: Votes_Down_Ballot_A
+        label: Candidate A / Down-Ballot A
+        key: candidate_a_down_ballot
+      - presidential_candidate_key: candidate_b
+        down_ballot_column: Votes_Down_Ballot_B
+        label: Candidate B / Down-Ballot B
+        key: candidate_b_down_ballot
+
+statistics:
+  minimum_observations: 20
+  baseline_turnout_quantile: 0.9
+  studentized_residual_threshold: 3.0
+  alpha: 0.05
+  spatial_neighbors: 8
+  spatial_permutations: 999
+  random_seed: 42
+
+anomaly:
+  enabled: true
+  flag_threshold: 0.75
+
+server:
+  bind: 127.0.0.1:8080

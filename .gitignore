@@ -1,0 +1,4 @@
+/target
+*.code-workspace
+*.zip
+fictional-election-sample.csv
