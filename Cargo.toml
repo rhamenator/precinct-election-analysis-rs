@@ -21,7 +21,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4", features = ["derive"] }
 csv = "1"
 hex = "0.4"
-rand = "0.9"
+rand = "0.10"
 rand_chacha = "0.9"
 rmcp = { version = "3.1", features = ["transport-io"] }
 schemars = "1"
