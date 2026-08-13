@@ -2,10 +2,17 @@
 name = "precinct-election-analysis-rs"
 version = "0.1.0"
 edition = "2024"
+authors = ["Richard M. Hamilton"]
 rust-version = "1.89"
 description = "Validated precinct election statistics, deterministic anomaly diagnostics, web UI, and MCP server"
 repository = "https://github.com/rhamenator/precinct-election-analysis-rs"
 license = "GPL-3.0-only"
+
+[package.metadata.wix]
+upgrade-guid = "09F3A2FF-38C0-4C07-8808-1136A5B9BFFA"
+path-guid = "410166C5-A229-4193-AE4D-928B06ED4ED9"
+license = false
+eula = false
 
 [dependencies]
 anyhow = "1"
@@ -36,3 +43,8 @@ tower = { version = "0.5", features = ["util"] }
 [profile.release]
 lto = "thin"
 strip = "symbols"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
