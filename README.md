@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/logo.png" alt="Precinct Election Analysis Rust logo" width="220">
+</p>
+
 # Precinct Election Analysis — Rust
 
 A standalone Rust implementation for validating precinct-level election CSV data, running transparent exploratory diagnostics, producing reproducibility bundles, serving a small web application, and exposing the same workflow to LLM clients through a native MCP server.
